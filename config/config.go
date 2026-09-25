@@ -13,19 +13,12 @@ import (
 	"tailscale.com/types/key"
 )
 
-type configInner struct {
+type RouteAuth struct {
 	Node string `toml:"node"`
 	Key  string `toml:"key"`
-	Addr string `toml:"addr"`
 }
 
-type Config struct {
-	node string
-	key  string
-	Addr string
-}
-
-func NewConfig() Config {
+func NewRouteAuth() RouteAuth {
 	encoded, err := key.NewNode().MarshalText()
 	if err != nil {
 		log.Fatal(err)
@@ -36,18 +29,67 @@ func NewConfig() Config {
 		log.Fatal(err)
 	}
 
-	return Config{string(encoded), base64.StdEncoding.EncodeToString(n[:]), "[::]:0"}
+	return RouteAuth{string(encoded), base64.StdEncoding.EncodeToString(n[:])}
+}
+
+func CreateRouteAuth(psk [32]byte) RouteAuth {
+	encoded, err := key.NewNode().MarshalText()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return RouteAuth{string(encoded), base64.StdEncoding.EncodeToString(psk[:])}
+}
+
+func (c *RouteAuth) Identity() (key.NodePrivate, error) {
+	var out key.NodePrivate
+
+	return out, out.UnmarshalText([]byte(c.Node))
+}
+
+func (c *RouteAuth) Psk() ([32]byte, error) {
+	out, err := base64.StdEncoding.DecodeString(c.Key)
+	if err != nil {
+		return [32]byte{}, err
+	}
+
+	if len(out) != 32 {
+		return [32]byte{}, errors.New("invalid PSK")
+	}
+
+	return [32]byte(out), nil
+}
+
+type SendRoute struct {
+	Name string    `toml:"name"`
+	Auth RouteAuth `toml:"auth"`
+	Addr string    `toml:"addr"`
+	Tcp  bool      `toml:"tcp"`
+	Udp  bool      `toml:"udp"`
+}
+
+type RecvRoute struct {
+	Name   string `toml:"name"`
+	Server string `toml:"server"`
+	Addr   string `toml:"addr"`
+	Tcp    bool   `toml:"tcp"`
+	Udp    bool   `toml:"udp"`
+}
+
+type Config struct {
+	Send []SendRoute `toml:"send"`
+	Recv []RecvRoute `toml:"recv"`
 }
 
 func LoadConfig(from string) (Config, error) {
 	_, err := os.Stat(from)
 	doesNotExist := errors.Is(err, os.ErrNotExist)
 	if err != nil && !doesNotExist {
-		return NewConfig(), err
+		return Config{}, err
 	}
 
 	if doesNotExist {
-		out := NewConfig()
+		out := Config{}
 
 		if err := out.Save(from); err != nil {
 			return out, err
@@ -57,28 +99,26 @@ func LoadConfig(from string) (Config, error) {
 	} else {
 		file, err := os.Open(from)
 		if err != nil {
-			return NewConfig(), err
+			return Config{}, err
 		}
 		defer file.Close()
 
 		content, err := io.ReadAll(file)
 		if err != nil {
-			return NewConfig(), err
+			return Config{}, err
 		}
 
-		var out configInner
-		err = toml.Unmarshal(content, &out)
-		if err != nil {
-			return NewConfig(), err
+		var out Config
+		if err := toml.Unmarshal(content, &out); err != nil {
+			return Config{}, err
 		}
 
-		return Config{out.Node, out.Key, out.Addr}, nil
+		return out, nil
 	}
 }
 
 func (c *Config) Save(to string) error {
-	inner := configInner{c.node, c.key, c.Addr}
-	encoded, err := toml.Marshal(inner)
+	encoded, err := toml.Marshal(*c)
 	if err != nil {
 		return err
 	}
@@ -107,23 +147,4 @@ func (c *Config) Save(to string) error {
 	}
 
 	return nil
-}
-
-func (c *Config) Identity() (key.NodePrivate, error) {
-	var out key.NodePrivate
-
-	return out, out.UnmarshalText([]byte(c.node))
-}
-
-func (c *Config) Psk() ([32]byte, error) {
-	out, err := base64.StdEncoding.DecodeString(c.key)
-	if err != nil {
-		return [32]byte{}, err
-	}
-
-	if len(out) != 32 {
-		return [32]byte{}, errors.New("invalid PSK")
-	}
-
-	return [32]byte(out), nil
 }
