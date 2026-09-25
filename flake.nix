@@ -25,13 +25,12 @@
 
           src = ./.;
 
-          vendorHash = "sha256-pZRX9v4pK2rjTJzqrc9yi1Kiu4cSGg0JH6q45W1TjBM=";
+          vendorHash = "sha256-TFmDubjWD3U1a49mRhgXmjWR5dvNHYq1lXJz5jGyzOE=";
 
           ldflags = [
             "-s"
             "-w"
           ];
-
         };
       });
 
