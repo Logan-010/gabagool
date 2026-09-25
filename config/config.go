@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	"github.com/tailscale/tailcat"
 	"tailscale.com/types/key"
 )
 
@@ -41,6 +42,16 @@ func CreateRouteAuth(psk [32]byte) RouteAuth {
 	return RouteAuth{string(encoded), base64.StdEncoding.EncodeToString(psk[:])}
 }
 
+// PskFromTailcatAddr extracts the pre-shared key embedded in a tailcat address.
+func PskFromTailcatAddr(addr string) ([32]byte, error) {
+	info, err := tailcat.ParseAddr(tailcat.Addr(addr))
+	if err != nil {
+		return [32]byte{}, err
+	}
+
+	return [32]byte(info.PresharedKey), nil
+}
+
 func (c *RouteAuth) Identity() (key.NodePrivate, error) {
 	var out key.NodePrivate
 
@@ -58,6 +69,28 @@ func (c *RouteAuth) Psk() ([32]byte, error) {
 	}
 
 	return [32]byte(out), nil
+}
+
+// TailcatAddr returns a tailcat address for this route's identity and PSK.
+func (c *RouteAuth) TailcatAddr() (string, error) {
+	node, err := c.Identity()
+	if err != nil {
+		return "", err
+	}
+
+	psk, err := c.Psk()
+	if err != nil {
+		return "", err
+	}
+
+	addr := tailcat.ConnInfo{
+		ServerPublic:      tailcat.NodePublic{NodePublic: node.Public()},
+		ServerDiscoPublic: tailcat.DiscoPublicForNode(node),
+		PresharedKey:      tailcat.PresharedKey(psk),
+		RegionID:          -1,
+	}
+
+	return string(addr.Addr()), nil
 }
 
 type SendRoute struct {
